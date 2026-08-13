@@ -47,8 +47,27 @@ jobs:
 
       - name: SARIF is well-formed
         run: |
-          node dist/cli.js check test/fixtures/bad --format sarif > graphlint.sarif
-          node -e "const s=require('./graphlint.sarif');if(s.version!=='2.1.0')throw new Error('bad sarif version');if(!s.runs[0].results.length)throw new Error('no sarif results');console.log('ok',s.runs[0].results.length,'results')"
+          # `check` on the bad fixtures exits 1 by design — that is the whole
+          # point of those fixtures — and this step runs under `bash -e`, so the
+          # exit code has to be tolerated or the step dies before validating.
+          node dist/cli.js check test/fixtures/bad --format sarif > graphlint.sarif || true
+          # Read and parse explicitly: `require()` cannot load a `.sarif` file,
+          # because Node only resolves .js, .json and .node extensions.
+          node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            const s = JSON.parse(readFileSync('graphlint.sarif', 'utf8'));
+            if (s.version !== '2.1.0') throw new Error('bad sarif version: ' + s.version);
+            const run = s.runs?.[0];
+            if (!run) throw new Error('sarif has no runs');
+            if (!run.results?.length) throw new Error('sarif has no results');
+            const declared = new Set(run.tool.driver.rules.map((r) => r.id));
+            for (const res of run.results) {
+              if (!declared.has(res.ruleId)) throw new Error('result cites undeclared rule ' + res.ruleId);
+              const region = res.locations[0].physicalLocation.region;
+              if (!(region.startLine > 0)) throw new Error('result has no line for ' + res.ruleId);
+            }
+            console.log('ok  sarif 2.1.0,', run.results.length, 'results,', declared.size, 'rules declared');
+          "
 
       - uses: github/codeql-action/upload-sarif@v3
         if: always()
