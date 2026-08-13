@@ -1,0 +1,16 @@
+{
+  "name": "broken-spec",
+  "nodes": [
+    { "id": "scope",    "tier": "standard" },
+    { "id": "scan",     "tier": "cheap", "outputSchema": "FINDING" },
+    { "id": "orphan",   "tier": "deep" },
+    { "id": "verify",   "harness": { "kind": "diverse-lens", "lenses": ["authz", "authz", "authz"] } },
+    { "id": "report",   "tier": "deep" }
+  ],
+  "edges": [
+    { "from": "scope",  "to": "scan",   "channel": "routes" },
+    { "from": "scan",   "to": "verify", "channel": "findings", "barrier": true },
+    { "from": "verify", "to": "report", "channel": "confirmed" },
+    { "from": "report", "to": "scan",   "channel": "retry" }
+  ]
+}

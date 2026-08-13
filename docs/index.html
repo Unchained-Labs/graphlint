@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>graphlint — static analyzer for agent workflow specs</title>
+<meta name="description" content="Catches barrier misuse, correlated verifiers, missing schemas and non-terminating cycles in agent workflow specs, before a token is spent.">
+<meta property="og:title" content="graphlint — static analyzer for agent workflow specs">
+<meta property="og:description" content="Catches barrier misuse, correlated verifiers, missing schemas and non-terminating cycles in agent workflow specs, before a token is spent.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg">
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/brand.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="https://unchained-labs.github.io/" aria-label="Unchained Labs">
+      <img src="assets/lockup-horizontal.svg" alt="Unchained Labs" style="height:22px">
+    </a>
+    <nav>
+      <a href="#install">Install</a>
+      <a href="#rules">Rules</a>
+      <a href="#why">Why</a>
+      <a href="https://github.com/Unchained-Labs/graphlint">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="label">graphlint</p>
+    <h1>Your agent graph has bugs you can find without running it.</h1>
+    <p class="lead">A barrier where a stream would do. Three verifiers that fail identically. A cycle that never converges. All of it is visible in the spec — the cheapest possible place to catch it.</p>
+    <ul class="badges">
+      <li class="badge warn">alpha</li>
+      <li class="badge ">16 rules</li>
+      <li class="badge up">57 tests passing</li>
+      <li class="badge ">MIT</li>
+    </ul>
+    <div class="btn-row">
+      <a class="btn primary" href="https://www.npmjs.com/package/graphlint">npm i -D graphlint</a>
+      <a class="btn " href="https://github.com/Unchained-Labs/graphlint">GitHub</a>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <p class="label">Install</p>
+    <h2>Zero config, zero tokens</h2>
+    <pre class="term"><code><span class="p">$</span> <span class="c">npm i -D graphlint</span>
+<span class="p">$</span> <span class="c">npx graphlint check .claude/workflows/</span>
+
+<span class="dim">.claude/workflows/review.js (script)</span>
+
+  <span class="er">✗</span> This `parallel()` barrier&#x27;s result is only reshaped, never compared across items.  <span class="dim">unjustified-barrier</span>
+   24 │ const found = await parallel(DIMENSIONS.map((d) =&gt; () =&gt; agent(d.prompt)))
+      │                     <span class="er">~</span>
+     <span class="ok">fix</span> Use `pipeline(items, stage1, stage2)` and put the reshape inside a stage.
+
+  <span class="er">✗</span> 3 verifiers spawned from one factory with no varying lens, model or index.  <span class="dim">correlated-verifiers</span>
+   31 │     agent(`Verify this finding is real. Answer yes or no.`),
+      │     <span class="er">~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</span>
+     <span class="ok">fix</span> Vary the lens — three different questions beat three identical ones, and it is free.
+
+<span class="er">2 errors</span> <span class="dim">·</span> <span class="wa">3 warnings</span> <span class="dim">in 1 file</span></code></pre>
+    <p class="narrow">It is a static analyzer. It never spawns an agent, never calls a model, and costs nothing to run. Node 20+.</p>
+  </div>
+</section>
+
+<section id="inputs">
+  <div class="wrap">
+    <p class="label">Inputs</p>
+    <h2>Both shapes a graph comes in</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Workflow scripts</h3>
+        <p><code>agent()</code>, <code>parallel()</code>, <code>pipeline()</code>, <code>phase()</code>, <code>export const meta</code>. Parsed with a real JS parser rather than regexes, because almost every interesting property is contextual — whether a call sits inside a cycle, which pipeline stage it belongs to, whether its result is consumed without a schema.</p>
+      </div>
+      <div class="card">
+        <h3>Declarative graph specs</h3>
+        <p><code><em>.graph.json</code>, <code></em>.spec.json</code> — nodes and edges as data. Structural checks apply here too: unreachable nodes, cycles with no declared cap, <code>barrier: true</code> with no <code>barrierReason</code>.</p>
+      </div>
+    </div>
+    <p class="narrow">Both front-ends compile to the same intermediate representation, and every rule reads only that. It is why a rule written for one input shape works on the other.</p>
+    <div class="note">
+      <p>A bare directory is scanned for <code><em>.graph.json</code>, <code></em>.spec.json</code>, anything under a <code>workflows/</code> directory, and scripts that actually call <code>agent()</code>. It does not lint every <code>.js</code> file in your repo.</p>
+    </div>
+  </div>
+</section>
+
+<section id="rules">
+  <div class="wrap">
+    <p class="label">Rules</p>
+    <h2>16 rules, each with a reason</h2>
+    <p class="narrow">Every finding carries both the reasoning and the fix. A linter that says <em>don&#x27;t</em> without saying <em>because</em> gets disabled by the second week.</p>
+    <h3>Errors — costs money or does not terminate</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Rule</th>
+          <th>Catches</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><code>agent-as-reduce</code></td>
+            <td>An agent spawned to combine, merge or dedupe results. That is an edge, not a node — <code>flatMap</code> and a <code>Set</code> do it for zero tokens.</td>
+          </tr>
+          <tr>
+            <td><code>correlated-verifiers</code></td>
+            <td>N identical verifiers. Three skeptics sharing a model and a prompt scaffold are one check at 3× the price.</td>
+          </tr>
+          <tr>
+            <td><code>unbounded-cycle</code></td>
+            <td>A cycle spawning agents with no dry-round counter or no hard cap.</td>
+          </tr>
+          <tr>
+            <td><code>resurfacing-cycle</code></td>
+            <td>A cycle deduping against <em>confirmed</em> results instead of everything <em>seen</em>, so rejected findings resurface forever.</td>
+          </tr>
+          <tr>
+            <td><code>null-unsafe-fanin</code></td>
+            <td>A fan-in that assumes a full result set. One failed node then kills a run that had 8 of 9 results.</td>
+          </tr>
+          <tr>
+            <td><code>nondeterminism</code></td>
+            <td><code>Date.now()</code>, <code>Math.random()</code>, argless <code>new Date()</code> — each invalidates the resume cache and turns a crash into a full re-spend.</td>
+          </tr>
+          <tr>
+            <td><code>unisolated-writer</code></td>
+            <td>Parallel agents editing files without <code>isolation: &quot;worktree&quot;</code>. Fails silently: the tree compiles and is wrong.</td>
+          </tr>
+          <tr>
+            <td><code>spec-structure</code></td>
+            <td>Unreachable nodes and uncapped cycles in a declarative spec.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>Warnings — will cost you at scale</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Rule</th>
+          <th>Catches</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><code>unjustified-barrier</code></td>
+            <td>A <code>parallel()</code> whose result is only reshaped, or <code>barrier: true</code> with no <code>barrierReason</code>.</td>
+          </tr>
+          <tr>
+            <td><code>missing-schema</code></td>
+            <td>Free text consumed downstream instead of a validated contract.</td>
+          </tr>
+          <tr>
+            <td><code>untiered-graph</code></td>
+            <td>No model or effort set anywhere, so every node inherits the session model.</td>
+          </tr>
+          <tr>
+            <td><code>silent-cap</code></td>
+            <td>A truncated work list with no log — the report reads as full coverage.</td>
+          </tr>
+          <tr>
+            <td><code>missing-meta</code></td>
+            <td>No <code>export const meta</code>, so the run is unnamed and its phases ungrouped.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>Info — worth a look</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Rule</th>
+          <th>Catches</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><code>conjunction-prompt</code></td>
+            <td>A prompt asked to scan <em>and</em> write. Two verbs, two nodes.</td>
+          </tr>
+          <tr>
+            <td><code>phase-mismatch</code></td>
+            <td><code>phase()</code> titles and <code>meta.phases</code> disagree.</td>
+          </tr>
+          <tr>
+            <td><code>uniform-verification</code></td>
+            <td>Every finding verified equally hard, with no severity threshold.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <pre class="term"><code><span class="p">$</span> <span class="c">graphlint explain correlated-verifiers</span></code></pre>
+  </div>
+</section>
+
+<section id="why">
+  <div class="wrap">
+    <p class="label">Why</p>
+    <h2>These graphs fail in a small number of ways</h2>
+    <ul class="clean">
+      <li><strong>A barrier where a stream would do.</strong> <code>parallel()</code> waits for the slowest item; <code>pipeline()</code> does not. Same agents, same work, strictly more waiting.</li>
+      <li><strong>Verifiers that share a model, a temperature and a prompt scaffold.</strong> They fail identically, so &quot;3 of 3 agree&quot; can be one error counted three times — at triple the cost.</li>
+      <li><strong>A cycle deduping against the wrong set.</strong> Rejected findings resurface every round, so the dry counter never trips and the loop never converges.</li>
+      <li><strong>Free text crossing an edge</strong> that a downstream node has to parse.</li>
+    </ul>
+    <p class="narrow">None of these need a run to find. They are visible in the spec — before a token is spent, in the same pass as your other linters.</p>
+    <div class="note warn">
+      <p><strong>It will produce false positives on unusual graphs.</strong> Barriers especially: a barrier that is load-bearing for a reason <code>graphlint</code> cannot see reads as unjustified. Turn the rule off per-repo in <code>.graphlintrc.json</code> rather than working around it.</p>
+      <p>It also does not estimate cost (that is <a href="https://github.com/Unchained-Labs/preflight">preflight</a>) and does not measure verifier independence from real runs (that is <a href="https://github.com/Unchained-Labs/decorrelate">decorrelate</a>).</p>
+    </div>
+  </div>
+</section>
+
+<section id="ci">
+  <div class="wrap">
+    <p class="label">CI</p>
+    <h2>Findings in the Security tab</h2>
+    <pre><code>- run: npx graphlint check .claude/workflows --format sarif &gt; graphlint.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: graphlint.sarif }</code></pre>
+    <p class="narrow">Exit code is <code>1</code> if any error fired or warnings exceed <code>--max-warnings</code>, <code>0</code> otherwise. <code>--format json</code> for your own tooling.</p>
+  </div>
+</section>
+
+<section id="family">
+  <div class="wrap">
+    <p class="label">The family</p>
+    <h2>One layer of a set</h2>
+    <div class="grid three">
+      <a class="card" href="https://github.com/Unchained-Labs/preflight">
+        <h3>preflight</h3>
+        <p>Prices the spec before it runs and comments the predicted agent count and dollar cost on the PR.</p>
+      </a>
+      <a class="card" href="https://github.com/Unchained-Labs/decorrelate">
+        <h3>decorrelate</h3>
+        <p>Measures whether your verifiers are actually independent, from recorded verdicts.</p>
+      </a>
+      <a class="card" href="https://github.com/Unchained-Labs/workflow-hub">
+        <h3>workflow-hub</h3>
+        <p>Graph specs that lint clean out of the box — <code>npx workflow-hub add auth-audit</code>.</p>
+      </a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <span>graphlint · Unchained Labs</span>
+    <nav>
+      <a href="https://unchained-labs.github.io/">Org</a>
+      <a href="https://github.com/Unchained-Labs/graphlint">Source</a>
+      <a href="https://unchained-labs.github.io/branding/">Brand</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

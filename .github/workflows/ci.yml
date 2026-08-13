@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+
+  dogfood:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The clean fixtures must stay clean — this is the regression that matters.
+      - name: good fixtures lint clean
+        run: node dist/cli.js check test/fixtures/good
+
+      # And the bad ones must keep failing, or a rule silently stopped working.
+      - name: bad fixtures still fail
+        run: |
+          if node dist/cli.js check test/fixtures/bad; then
+            echo "::error::test/fixtures/bad linted clean — a rule regressed"
+            exit 1
+          fi
+
+      - name: SARIF is well-formed
+        run: |
+          node dist/cli.js check test/fixtures/bad --format sarif > graphlint.sarif
+          node -e "const s=require('./graphlint.sarif');if(s.version!=='2.1.0')throw new Error('bad sarif version');if(!s.runs[0].results.length)throw new Error('no sarif results');console.log('ok',s.runs[0].results.length,'results')"
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: graphlint.sarif
+          category: graphlint
