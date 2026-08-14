@@ -10,6 +10,11 @@
   </p>
 </div>
 
+<div align="center">
+  <img src="docs/assets/demo.gif" width="760" alt="graphlint terminal demo">
+  <br><sub>16 rules, zero tokens, no network calls. <a href="https://unchained-labs.github.io/graphlint/">Full docs →</a></sub>
+</div>
+
 ---
 
 **Status: alpha.** The rule set is stable enough to run in CI; rule ids and the
