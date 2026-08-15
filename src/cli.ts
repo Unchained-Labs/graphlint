@@ -2,7 +2,7 @@
 /** graphlint CLI: check, rules, graph, explain. */
 import { readFileSync } from "node:fs";
 
-import { ALL_RULES, buildGraph, collect, lintFile, loadConfig, rel, summarise } from "./lint.js";
+import { ALL_RULES, buildGraph, collect, lintFile, lintSource, loadConfig, rel, summarise } from "./lint.js";
 import { json, mermaid, pretty, sarif } from "./reporters/index.js";
 import type { Config, LintResult, Severity } from "./types.js";
 
@@ -34,6 +34,11 @@ EXIT CODES
 Defaults to the current directory when no path is given. A directory is scanned
 for graph specs (*.graph.json, *.spec.json), anything under a workflows/
 directory, and scripts that actually call agent() — not every .js file.
+
+A path of - reads one spec from stdin, so a graph can be generated and linted
+without a file in between:
+
+  localflow graph <session> | graphlint check -
 `;
 
 interface Args {
@@ -148,7 +153,45 @@ function cmdGraph(paths: string[]): number {
   return 0;
 }
 
+/**
+ * A spec arriving on stdin.
+ *
+ * Graphs are increasingly generated rather than written — localflow
+ * reconstructs the one a session actually ran — and making the caller land it
+ * in a temp file first is friction for no reason. `-` is the conventional
+ * spelling and it is the one the docs use.
+ */
+function readStdin(): string {
+  try {
+    return readFileSync(0, "utf8");
+  } catch (e) {
+    throw new Error(`could not read stdin: ${(e as Error).message}`);
+  }
+}
+
 function cmdCheck(a: Args): number {
+  if (a.paths.includes("-")) {
+    if (a.paths.length > 1) {
+      console.error("graphlint: `-` reads a single spec from stdin; give it on its own");
+      return 2;
+    }
+    let source: string;
+    try {
+      source = readStdin();
+    } catch (e) {
+      console.error(`graphlint: ${(e as Error).message}`);
+      return 2;
+    }
+    if (!source.trim()) {
+      console.error("graphlint: nothing on stdin");
+      return 2;
+    }
+    // Named for the reader's benefit: findings quote a filename, and "<stdin>"
+    // is more use than a temp path they never chose.
+    const result = lintSource("<stdin>.graph.json", source, loadConfig(process.cwd()));
+    return report(a, [a.quiet ? { ...result, findings: result.findings.filter((f) => f.severity !== "info") } : result]);
+  }
+
   const targets = a.paths.length ? a.paths : ["."];
   let files: string[] = [];
   for (const t of targets) {
@@ -181,6 +224,11 @@ function cmdCheck(a: Args): number {
     results = results.map((r) => ({ ...r, findings: r.findings.filter((f) => f.severity !== "info") }));
   }
 
+  return report(a, results);
+}
+
+/** Render findings and decide the exit code. Shared by the file and stdin paths. */
+function report(a: Args, results: LintResult[]): number {
   switch (a.format) {
     case "json":
       process.stdout.write(json(results));

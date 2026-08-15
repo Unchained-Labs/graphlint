@@ -80,7 +80,7 @@ graphlint graph <file>          # print the parsed graph as mermaid
 Exit code is `1` if any error fired (or warnings exceed `--max-warnings`), `0`
 otherwise, `2` on bad usage.
 
-### Two input shapes
+### Three input shapes
 
 `graphlint` reads both forms a graph comes in:
 
@@ -93,6 +93,24 @@ without a schema.
 **Declarative graph specs** — `*.graph.json`, `*.spec.json`. Nodes and edges as
 data. Here the checks are structural too: unreachable nodes, cycles with no
 declared cap, `barrier: true` with no `barrierReason`.
+
+**Graphs that already ran** — the same declarative shape, reconstructed from a
+transcript rather than written by hand.
+[localflow](https://github.com/Unchained-Labs/localflow) reads Claude Code's
+session transcripts, where every fan-out is recorded — which agents were issued
+together, how wide the group got, which came back with an error — and emits it
+as a spec this lints:
+
+```sh
+localflow graph f60740f7 | graphlint check -
+```
+
+That closes a real gap. A spec is a statement of intent; the graph that *ran* is
+what your bill was made of, and until now nothing could show you the second one.
+Every observed sequence arrives as `barrier: true` with a `barrierReason`
+beginning `observed:` — a measurement, not a claim that the barrier was needed.
+Deciding that is `unjustified-barrier`'s job, and it is a much more interesting
+question when the barrier definitely happened.
 
 A bare directory is scanned for `*.graph.json`, `*.spec.json`, anything under a
 `workflows/` directory, and scripts that actually call `agent()`. It does not
